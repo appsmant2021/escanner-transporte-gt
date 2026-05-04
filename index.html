@@ -37,6 +37,7 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+            display: block;
         }
         .scan-frame {
             position: absolute;
@@ -127,7 +128,6 @@
         .error-text.show { display: block; }
         .debug-info { color: #666; font-size: 10px; text-align: center; margin-top: 4px; }
         
-        /* Modal manual */
         .modal-overlay {
             display: none;
             position: absolute;
@@ -173,13 +173,12 @@
         <div class="permission-overlay" id="permissionOverlay">
             <div class="permission-box">
                 <h3>📷 Activar Cámara</h3>
-                <p>Coloca el código de barras DENTRO del rectángulo verde.<br><small>Mantenlo firme por 2 segundos.</small></p>
+                <p>Presiona el botón para iniciar el escáner.<br><small>Coloca el código DENTRO del rectángulo verde.</small></p>
                 <button class="btn-allow" onclick="iniciarEscanner()">Iniciar Escáner</button>
                 <small id="errorText" class="error-text"></small>
             </div>
         </div>
         
-        <!-- Modal entrada manual -->
         <div class="modal-overlay" id="manualModal">
             <div class="modal-box">
                 <h4>✏️ Ingresar Código Manualmente</h4>
@@ -190,7 +189,7 @@
         </div>
 
         <div class="video-wrapper" id="videoWrapper">
-            <video id="scannerVideo" autoplay playsinline muted></video>
+            <video id="scannerVideo" autoplay playsinline muted loop></video>
             <div class="scan-frame">
                 <div class="scan-label">📷 Código aquí</div>
             </div>
@@ -211,18 +210,22 @@
         var framesProcesados = 0;
         var ultimoCodigo = '';
         var tiempoUltimoCodigo = 0;
+        var barcodeDetectorInstance = null;
 
         function iniciarEscanner() {
+            var errorText = document.getElementById('errorText');
+            errorText.classList.remove('show');
+            errorText.textContent = '';
+            
+            document.getElementById('statusText').textContent = '📷 Solicitando cámara...';
+            document.getElementById('debugInfo').textContent = '';
+
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                document.getElementById('errorText').textContent = '❌ Use Chrome o Edge en Android.';
-                document.getElementById('errorText').classList.add('show');
+                errorText.textContent = '❌ Use Chrome o Edge en Android.';
+                errorText.classList.add('show');
                 return;
             }
 
-            document.getElementById('errorText').classList.remove('show');
-            document.getElementById('statusText').textContent = '📷 Solicitando cámara...';
-
-            // RESOLUCIÓN BAJA para evitar crasheos
             var constraints = {
                 video: {
                     facingMode: { ideal: 'environment' },
@@ -234,147 +237,159 @@
 
             navigator.mediaDevices.getUserMedia(constraints)
                 .then(function(stream) {
+                    console.log('✅ Cámara obtenida exitosamente');
                     scannerStream = stream;
-                    document.getElementById('permissionOverlay').style.display = 'none';
                     
                     var video = document.getElementById('scannerVideo');
-                    video.srcObject = stream;
+                    
+                    // Configurar el video ANTES de asignar el stream
                     video.setAttribute('playsinline', '');
                     video.setAttribute('muted', '');
+                    video.setAttribute('autoplay', '');
+                    video.srcObject = stream;
                     
-                    document.getElementById('statusText').textContent = '📷 Enfocando...';
-
+                    document.getElementById('statusText').textContent = '📷 Cámara lista. Iniciando escaneo...';
+                    
+                    // Esperar a que el video esté listo
                     video.onloadedmetadata = function() {
-                        video.play().then(function() {
-                            escaneando = true;
-                            framesProcesados = 0;
-                            loopEscaneo();
-                        }).catch(function(e) {
-                            document.getElementById('statusText').textContent = 'Error al iniciar video';
-                            console.error(e);
-                        });
+                        console.log('✅ Metadatos cargados, intentando reproducir...');
+                        
+                        // Intentar reproducir
+                        var playPromise = video.play();
+                        
+                        if (playPromise !== undefined) {
+                            playPromise.then(function() {
+                                console.log('✅ Video reproduciéndose');
+                                document.getElementById('permissionOverlay').style.display = 'none';
+                                document.getElementById('statusText').textContent = '📷 Escaneando... mantenga el código firme';
+                                escaneando = true;
+                                framesProcesados = 0;
+                                loopEscaneo();
+                            }).catch(function(err) {
+                                console.error('❌ Error al reproducir video:', err);
+                                document.getElementById('statusText').textContent = 'Error al iniciar video: ' + err.message;
+                                errorText.textContent = 'Error: ' + err.message + '. Intente recargar la página.';
+                                errorText.classList.add('show');
+                            });
+                        }
                     };
+                    
+                    // Timeout de seguridad: si en 5 segundos no se ha iniciado, mostrar error
+                    setTimeout(function() {
+                        if (!escaneando && document.getElementById('permissionOverlay').style.display !== 'none') {
+                            document.getElementById('statusText').textContent = 'Timeout: no se pudo iniciar el video';
+                            errorText.textContent = '⏱️ Timeout. Cierre la ventana e intente de nuevo.';
+                            errorText.classList.add('show');
+                        }
+                    }, 5000);
+                    
                 })
                 .catch(function(err) {
+                    console.error('❌ Error getUserMedia:', err);
                     var mensaje = '';
                     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        mensaje = '🚫 Permiso denegado. Vaya a Ajustes del navegador → Permisos → Cámara → Permitir.';
+                        mensaje = '🚫 Permiso de cámara denegado.\n\nPara arreglarlo:\n1. Abra Ajustes de Android\n2. Apps → Chrome/Brave\n3. Permisos → Cámara → Permitir';
                     } else if (err.name === 'NotFoundError') {
-                        mensaje = '📷 No se encontró cámara.';
+                        mensaje = '📷 No se encontró cámara en este dispositivo.';
+                    } else if (err.name === 'NotReadableError') {
+                        mensaje = '⚠️ La cámara está siendo usada por otra aplicación.';
                     } else {
-                        mensaje = '❌ Error: ' + (err.message || 'desconocido');
+                        mensaje = '❌ Error: ' + (err.message || err.name);
                     }
-                    document.getElementById('errorText').textContent = mensaje;
-                    document.getElementById('errorText').classList.add('show');
-                    document.getElementById('statusText').textContent = 'Error';
+                    errorText.textContent = mensaje;
+                    errorText.classList.add('show');
+                    document.getElementById('statusText').textContent = 'Error al acceder a la cámara';
                 });
         }
 
         function loopEscaneo() {
-            if (!escaneando) return;
+            if (!escaneando) {
+                console.log('⏹ Loop detenido: escaneando=false');
+                return;
+            }
             
             var video = document.getElementById('scannerVideo');
             
-            if (video.readyState < video.HAVE_ENOUGH_DATA || video.videoWidth === 0) {
+            if (!video || video.readyState < 2 || video.videoWidth === 0) {
+                console.log('⏳ Video no listo, reintentando... readyState=' + (video ? video.readyState : 'null'));
                 requestAnimationFrame(loopEscaneo);
                 return;
             }
 
             framesProcesados++;
             
-            // Actualizar debug cada 30 frames
+            // Actualizar info cada 30 frames
             if (framesProcesados % 30 === 0) {
                 document.getElementById('debugInfo').textContent = 
-                    'Frames: ' + framesProcesados + ' | Res: ' + video.videoWidth + 'x' + video.videoHeight;
-                document.getElementById('statusText').textContent = '📷 Escaneando... frame ' + framesProcesados;
+                    'Frames: ' + framesProcesados + ' | ' + video.videoWidth + 'x' + video.videoHeight;
             }
 
-            // Intentar detectar con BarcodeDetector API (nativa de Chrome)
+            // Intentar con BarcodeDetector nativo (Chrome/Edge)
             if (window.BarcodeDetector) {
-                tryDetectarConBarcodeDetector(video);
-            } else {
-                // Si no hay BarcodeDetector, intentar con jsQR cada 10 frames
-                if (framesProcesados % 10 === 0) {
-                    tryDetectarConJsQR(video);
-                } else {
-                    requestAnimationFrame(loopEscaneo);
-                }
-            }
-        }
-
-        var barcodeDetectorInstance = null;
-
-        function tryDetectarConBarcodeDetector(video) {
-            // Crear el detector una sola vez
-            if (!barcodeDetectorInstance) {
-                try {
-                    barcodeDetectorInstance = new BarcodeDetector({
-                        formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code']
-                    });
-                } catch(e) {
-                    console.log('BarcodeDetector no disponible, usando jsQR');
-                    barcodeDetectorInstance = 'no-disponible';
-                }
-            }
-
-            if (barcodeDetectorInstance === 'no-disponible') {
-                if (framesProcesados % 10 === 0) {
-                    tryDetectarConJsQR(video);
-                } else {
-                    requestAnimationFrame(loopEscaneo);
-                }
-                return;
-            }
-
-            barcodeDetectorInstance.then(function(detector) {
-                if (!escaneando) return;
-                
-                detector.detect(video).then(function(barcodes) {
-                    if (barcodes && barcodes.length > 0) {
-                        var codigo = barcodes[0].rawValue.trim();
-                        console.log('✅ Detectado:', codigo);
-                        
-                        var ahora = Date.now();
-                        if (codigo === ultimoCodigo && (ahora - tiempoUltimoCodigo) < 2000) {
-                            requestAnimationFrame(loopEscaneo);
-                            return;
-                        }
-                        ultimoCodigo = codigo;
-                        tiempoUltimoCodigo = ahora;
-                        
-                        codigoDetectado(codigo);
-                    } else {
-                        requestAnimationFrame(loopEscaneo);
+                if (!barcodeDetectorInstance) {
+                    try {
+                        barcodeDetectorInstance = new BarcodeDetector({
+                            formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code']
+                        });
+                        console.log('✅ BarcodeDetector creado');
+                    } catch(e) {
+                        console.log('⚠️ BarcodeDetector no soportado');
+                        barcodeDetectorInstance = null;
                     }
-                }).catch(function(err) {
-                    console.log('Error detectando:', err);
-                    requestAnimationFrame(loopEscaneo);
-                });
-            }).catch(function() {
-                requestAnimationFrame(loopEscaneo);
-            });
-        }
-
-        function tryDetectarConJsQR(video) {
-            if (!escaneando) return;
-            
-            var canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            var ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            if (typeof jsQR !== 'undefined') {
-                var code = jsQR(imageData.data, imageData.width, imageData.height, {
-                    inversionAttempts: 'dontInvert'
-                });
+                }
                 
-                if (code && code.data) {
-                    console.log('✅ jsQR detectó:', code.data);
-                    codigoDetectado(code.data);
+                if (barcodeDetectorInstance) {
+                    barcodeDetectorInstance.then(function(detector) {
+                        if (!escaneando) return;
+                        detector.detect(video).then(function(barcodes) {
+                            if (barcodes && barcodes.length > 0) {
+                                var codigo = barcodes[0].rawValue.trim();
+                                console.log('✅ CÓDIGO DETECTADO:', codigo);
+                                
+                                var ahora = Date.now();
+                                if (codigo === ultimoCodigo && (ahora - tiempoUltimoCodigo) < 2000) {
+                                    requestAnimationFrame(loopEscaneo);
+                                    return;
+                                }
+                                ultimoCodigo = codigo;
+                                tiempoUltimoCodigo = ahora;
+                                
+                                codigoDetectado(codigo);
+                                return;
+                            }
+                            requestAnimationFrame(loopEscaneo);
+                        }).catch(function(err) {
+                            console.log('Error detect:', err);
+                            requestAnimationFrame(loopEscaneo);
+                        });
+                    }).catch(function() {
+                        requestAnimationFrame(loopEscaneo);
+                    });
                     return;
+                }
+            }
+            
+            // Fallback: intentar con jsQR cada 10 frames
+            if (framesProcesados % 10 === 0 && typeof jsQR !== 'undefined') {
+                try {
+                    var canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    var ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    
+                    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    var code = jsQR(imageData.data, imageData.width, imageData.height, {
+                        inversionAttempts: 'dontInvert'
+                    });
+                    
+                    if (code && code.data) {
+                        console.log('✅ jsQR detectó:', code.data);
+                        codigoDetectado(code.data);
+                        return;
+                    }
+                } catch(e) {
+                    console.log('Error jsQR:', e);
                 }
             }
             
@@ -382,23 +397,37 @@
         }
 
         function codigoDetectado(texto) {
+            console.log('🎯 codigoDetectado llamado con:', texto);
             escaneando = false;
-            detenerCamara();
             
-            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            if (scannerStream) {
+                scannerStream.getTracks().forEach(function(t) { t.stop(); });
+                scannerStream = null;
+            }
+            
+            if (navigator.vibrate) {
+                navigator.vibrate([100, 50, 100]);
+            }
+            
             document.getElementById('statusText').textContent = '✅ Detectado: ' + texto;
             document.getElementById('debugInfo').textContent = 'Total frames: ' + framesProcesados;
 
             try {
                 if (window.opener && !window.opener.closed) {
+                    console.log('📤 Enviando código a ventana padre...');
                     window.opener.postMessage({
                         tipo: 'codigoEscaneado',
                         codigo: texto
                     }, '*');
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.log('Error enviando:', e);
+            }
 
-            setTimeout(function() { window.close(); }, 1500);
+            setTimeout(function() {
+                console.log('🔒 Cerrando ventana...');
+                window.close();
+            }, 1500);
         }
 
         function mostrarEntradaManual() {
@@ -413,24 +442,22 @@
             codigoDetectado(codigo);
         }
 
-        function detenerCamara() {
+        function cerrarVentana() {
             escaneando = false;
             if (scannerStream) {
                 scannerStream.getTracks().forEach(function(t) { t.stop(); });
                 scannerStream = null;
             }
-            var video = document.getElementById('scannerVideo');
-            if (video) video.srcObject = null;
-        }
-
-        function cerrarVentana() {
-            detenerCamara();
             window.close();
         }
 
-        window.addEventListener('beforeunload', function() { detenerCamara(); });
+        window.addEventListener('beforeunload', function() {
+            escaneando = false;
+            if (scannerStream) {
+                scannerStream.getTracks().forEach(function(t) { t.stop(); });
+            }
+        });
 
-        // Tecla Enter en entrada manual
         document.addEventListener('DOMContentLoaded', function() {
             var inputManual = document.getElementById('manualCode');
             if (inputManual) {
@@ -444,6 +471,7 @@
         });
 
         document.getElementById('permissionOverlay').style.display = 'flex';
+        console.log('🚀 Escáner listo. Esperando clic en "Iniciar Escáner"');
     </script>
 </body>
 </html>
