@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Escanear Código - Transporte GT</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .scanner-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            max-width: 500px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .video-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            min-height: 300px;
+        }
+
+        #scannerVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #scannerCanvas {
+            display: none;
+        }
+
+        /* Marco de escaneo */
+        .scan-frame {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 220px;
+            height: 160px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .scan-frame::before,
+        .scan-frame::after {
+            content: '';
+            position: absolute;
+            width: 25px;
+            height: 25px;
+            border-color: #00ff88;
+            border-style: solid;
+        }
+
+        .scan-frame::before {
+            top: 0;
+            left: 0;
+            border-width: 3px 0 0 3px;
+            border-radius: 6px 0 0 0;
+        }
+
+        .scan-frame::after {
+            bottom: 0;
+            right: 0;
+            border-width: 0 3px 3px 0;
+            border-radius: 0 0 6px 0;
+        }
+
+        .corner-tr {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 25px;
+            height: 25px;
+            border-color: #00ff88;
+            border-style: solid;
+            border-width: 3px 3px 0 0;
+            border-radius: 0 6px 0 0;
+        }
+
+        .corner-bl {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 25px;
+            height: 25px;
+            border-color: #00ff88;
+            border-style: solid;
+            border-width: 0 0 3px 3px;
+            border-radius: 0 0 0 6px;
+        }
+
+        .scan-line {
+            position: absolute;
+            left: 8px;
+            right: 8px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #00ff88, transparent);
+            box-shadow: 0 0 8px rgba(0, 255, 136, 0.8);
+            animation: moveLine 2s ease-in-out infinite;
+            top: 50%;
+        }
+
+        @keyframes moveLine {
+            0%, 100% { top: 12%; }
+            50% { top: 88%; }
+        }
+
+        .bottom-panel {
+            background: #1a1a2e;
+            padding: 15px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .status-text {
+            color: #ccc;
+            font-size: 14px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        .btn-close {
+            background: #d63031;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 10px 30px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-close:active {
+            transform: scale(0.96);
+            opacity: 0.9;
+        }
+
+        .permission-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+        }
+
+        .permission-box {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            text-align: center;
+            max-width: 300px;
+            width: 90%;
+        }
+
+        .permission-box h3 {
+            color: #0072c6;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .permission-box p {
+            color: #636e72;
+            font-size: 13px;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+
+        .permission-box small {
+            font-size: 11px;
+            color: #999;
+            display: block;
+            margin-top: 10px;
+        }
+
+        .btn-allow {
+            background: linear-gradient(135deg, #0072c6, #005a9e);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 12px 30px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-allow:active {
+            transform: scale(0.96);
+        }
+
+        .error-text {
+            color: #d63031;
+            font-size: 12px;
+            display: none;
+        }
+
+        .error-text.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="scanner-container">
+
+        <!-- Overlay de permiso -->
+        <div class="permission-overlay" id="permissionOverlay">
+            <div class="permission-box">
+                <h3>📷 Activar Cámara</h3>
+                <p>Presiona el botón para iniciar el escáner y leer códigos de barras.</p>
+                <button class="btn-allow" id="btnAllow" onclick="iniciarEscanner()">
+                    Iniciar Escáner
+                </button>
+                <small id="errorText" class="error-text"></small>
+            </div>
+        </div>
+
+        <!-- Video -->
+        <div class="video-wrapper">
+            <video id="scannerVideo" autoplay playsinline muted></video>
+            <canvas id="scannerCanvas"></canvas>
+            <div class="scan-frame">
+                <div class="corner-tr"></div>
+                <div class="corner-bl"></div>
+                <div class="scan-line"></div>
+            </div>
+        </div>
+
+        <!-- Panel inferior -->
+        <div class="bottom-panel">
+            <div class="status-text" id="statusText">Esperando activación...</div>
+            <button class="btn-close" onclick="cerrarVentana()">Cancelar</button>
+        </div>
+    </div>
+
+    <script>
+        var scannerStream = null;
+        var scannerAnimFrame = null;
+        var escaneando = false;
+        var barcodeDetector = null;
+
+        // Intentar usar BarcodeDetector nativo (Chrome/Edge)
+        if (window.BarcodeDetector) {
+            barcodeDetector = new BarcodeDetector({
+                formats: ['qr_code', 'code_128', 'ean_13', 'ean_8', 'code_39', 'upc_a', 'upc_e']
+            }).catch(function(e) {
+                console.warn('BarcodeDetector no disponible, usando jsQR:', e);
+                barcodeDetector = null;
+            });
+        }
+
+        function iniciarEscanner() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                document.getElementById('errorText').textContent =
+                    '❌ Navegador no soportado. Use Chrome o Edge en Android.';
+                document.getElementById('errorText').classList.add('show');
+                return;
+            }
+
+            document.getElementById('errorText').classList.remove('show');
+            document.getElementById('statusText').textContent = '📷 Solicitando permiso de cámara...';
+
+            var constraints = {
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            };
+
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(function(stream) {
+                    scannerStream = stream;
+                    document.getElementById('permissionOverlay').style.display = 'none';
+                    arrancarVideo(stream);
+                })
+                .catch(function(err) {
+                    var mensaje = '';
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        mensaje = '🚫 Permiso denegado.\n\nPara permitir:\nAndroid: Ajustes → Apps → [Navegador] → Permisos → Cámara\n\no use Chrome que funciona mejor.';
+                    } else if (err.name === 'NotFoundError') {
+                        mensaje = '📷 No se encontró cámara.';
+                    } else if (err.name === 'NotReadableError') {
+                        mensaje = '⚠️ Cámara en uso por otra app.';
+                    } else {
+                        mensaje = '❌ Error: ' + (err.message || 'desconocido');
+                    }
+                    document.getElementById('errorText').textContent = mensaje;
+                    document.getElementById('errorText').classList.add('show');
+                    document.getElementById('statusText').textContent = 'Error al acceder a la cámara';
+                });
+        }
+
+        function arrancarVideo(stream) {
+            var video = document.getElementById('scannerVideo');
+            video.srcObject = stream;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('muted', '');
+
+            document.getElementById('statusText').textContent = '📷 Enfocando... apunte al código';
+
+            video.onloadedmetadata = function() {
+                video.play().then(function() {
+                    escaneando = true;
+                    loopEscaneo();
+                }).catch(function(e) {
+                    document.getElementById('statusText').textContent = 'Error al iniciar video';
+                    console.error(e);
+                });
+            };
+        }
+
+        function loopEscaneo() {
+            if (!escaneando) return;
+
+            var video = document.getElementById('scannerVideo');
+            var canvas = document.getElementById('scannerCanvas');
+
+            if (video.readyState < video.HAVE_ENOUGH_DATA || video.videoWidth === 0) {
+                scannerAnimFrame = requestAnimationFrame(loopEscaneo);
+                return;
+            }
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            if (barcodeDetector) {
+                barcodeDetector.then(function(detector) {
+                    if (!escaneando) return;
+                    detector.detect(canvas).then(function(barcodes) {
+                        if (barcodes && barcodes.length > 0) {
+                            codigoDetectado(barcodes[0].rawValue);
+                        } else {
+                            scannerAnimFrame = requestAnimationFrame(loopEscaneo);
+                        }
+                    }).catch(function() {
+                        escanearConJsQR(ctx, canvas);
+                    });
+                });
+            } else {
+                escanearConJsQR(ctx, canvas);
+            }
+        }
+
+        function escanearConJsQR(ctx, canvas) {
+            if (!escaneando) return;
+            var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            var code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: 'dontInvert'
+            });
+
+            if (code && code.data) {
+                codigoDetectado(code.data);
+            } else {
+                scannerAnimFrame = requestAnimationFrame(loopEscaneo);
+            }
+        }
+
+        function codigoDetectado(texto) {
+            escaneando = false;
+            detenerCamara();
+
+            if (navigator.vibrate) {
+                navigator.vibrate([100, 50, 100]);
+            }
+
+            document.getElementById('statusText').textContent = '✅ Detectado: ' + texto.trim();
+
+            // Enviar el código a la ventana padre (App Script)
+            try {
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({
+                        tipo: 'codigoEscaneado',
+                        codigo: texto.trim()
+                    }, '*');
+                }
+            } catch (e) {
+                console.log('No se pudo enviar a ventana padre:', e);
+            }
+
+            // Cerrar después de 1 segundo
+            setTimeout(function() {
+                window.close();
+            }, 1000);
+        }
+
+        function detenerCamara() {
+            if (scannerAnimFrame) {
+                cancelAnimationFrame(scannerAnimFrame);
+                scannerAnimFrame = null;
+            }
+
+            if (scannerStream) {
+                scannerStream.getTracks().forEach(function(track) {
+                    track.stop();
+                });
+                scannerStream = null;
+            }
+        }
+
+        function cerrarVentana() {
+            detenerCamara();
+            window.close();
+        }
+
+        // Por si el usuario cierra la ventana manualmente
+        window.addEventListener('beforeunload', function() {
+            detenerCamara();
+        });
+
+        // Si la ventana se abre desde App Script, mostrar el overlay
+        document.getElementById('permissionOverlay').style.display = 'flex';
+    </script>
+</body>
+</html>
