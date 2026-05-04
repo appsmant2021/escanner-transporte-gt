@@ -7,7 +7,6 @@
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #000;
@@ -17,7 +16,6 @@
             flex-direction: column;
             -webkit-tap-highlight-color: transparent;
         }
-
         .scanner-container {
             flex: 1;
             display: flex;
@@ -27,7 +25,6 @@
             margin: 0 auto;
             width: 100%;
         }
-
         .video-wrapper {
             flex: 1;
             position: relative;
@@ -38,18 +35,12 @@
             background: #000;
             min-height: 300px;
         }
-
         #scannerVideo {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
-
-        #scannerCanvas {
-            display: none;
-        }
-
-        /* Marco de escaneo */
+        #scannerCanvas { display: none; }
         .scan-frame {
             position: absolute;
             top: 50%;
@@ -60,7 +51,6 @@
             pointer-events: none;
             z-index: 10;
         }
-
         .scan-frame::before,
         .scan-frame::after {
             content: '';
@@ -70,21 +60,18 @@
             border-color: #00ff88;
             border-style: solid;
         }
-
         .scan-frame::before {
             top: 0;
             left: 0;
             border-width: 3px 0 0 3px;
             border-radius: 6px 0 0 0;
         }
-
         .scan-frame::after {
             bottom: 0;
             right: 0;
             border-width: 0 3px 3px 0;
             border-radius: 0 0 6px 0;
         }
-
         .corner-tr {
             position: absolute;
             top: 0;
@@ -96,7 +83,6 @@
             border-width: 3px 3px 0 0;
             border-radius: 0 6px 0 0;
         }
-
         .corner-bl {
             position: absolute;
             bottom: 0;
@@ -108,7 +94,6 @@
             border-width: 0 0 3px 3px;
             border-radius: 0 0 0 6px;
         }
-
         .scan-line {
             position: absolute;
             left: 8px;
@@ -119,12 +104,10 @@
             animation: moveLine 2s ease-in-out infinite;
             top: 50%;
         }
-
         @keyframes moveLine {
             0%, 100% { top: 12%; }
             50% { top: 88%; }
         }
-
         .bottom-panel {
             background: #1a1a2e;
             padding: 15px 20px;
@@ -133,14 +116,12 @@
             gap: 10px;
             align-items: center;
         }
-
         .status-text {
             color: #ccc;
             font-size: 14px;
             text-align: center;
             min-height: 20px;
         }
-
         .btn-close {
             background: #d63031;
             color: white;
@@ -152,12 +133,7 @@
             cursor: pointer;
             transition: all 0.2s;
         }
-
-        .btn-close:active {
-            transform: scale(0.96);
-            opacity: 0.9;
-        }
-
+        .btn-close:active { transform: scale(0.96); opacity: 0.9; }
         .permission-overlay {
             position: absolute;
             top: 0;
@@ -170,7 +146,6 @@
             justify-content: center;
             z-index: 20;
         }
-
         .permission-box {
             background: white;
             border-radius: 16px;
@@ -179,27 +154,9 @@
             max-width: 300px;
             width: 90%;
         }
-
-        .permission-box h3 {
-            color: #0072c6;
-            margin-bottom: 10px;
-            font-size: 18px;
-        }
-
-        .permission-box p {
-            color: #636e72;
-            font-size: 13px;
-            margin-bottom: 15px;
-            line-height: 1.5;
-        }
-
-        .permission-box small {
-            font-size: 11px;
-            color: #999;
-            display: block;
-            margin-top: 10px;
-        }
-
+        .permission-box h3 { color: #0072c6; margin-bottom: 10px; font-size: 18px; }
+        .permission-box p { color: #636e72; font-size: 13px; margin-bottom: 15px; line-height: 1.5; }
+        .permission-box small { font-size: 11px; color: #999; display: block; margin-top: 10px; }
         .btn-allow {
             background: linear-gradient(135deg, #0072c6, #005a9e);
             color: white;
@@ -211,38 +168,21 @@
             cursor: pointer;
             transition: all 0.2s;
         }
-
-        .btn-allow:active {
-            transform: scale(0.96);
-        }
-
-        .error-text {
-            color: #d63031;
-            font-size: 12px;
-            display: none;
-        }
-
-        .error-text.show {
-            display: block;
-        }
+        .btn-allow:active { transform: scale(0.96); }
+        .error-text { color: #d63031; font-size: 12px; display: none; }
+        .error-text.show { display: block; }
     </style>
 </head>
 <body>
     <div class="scanner-container">
-
-        <!-- Overlay de permiso -->
         <div class="permission-overlay" id="permissionOverlay">
             <div class="permission-box">
                 <h3>📷 Activar Cámara</h3>
                 <p>Presiona el botón para iniciar el escáner y leer códigos de barras.</p>
-                <button class="btn-allow" id="btnAllow" onclick="iniciarEscanner()">
-                    Iniciar Escáner
-                </button>
+                <button class="btn-allow" id="btnAllow" onclick="iniciarEscanner()">Iniciar Escáner</button>
                 <small id="errorText" class="error-text"></small>
             </div>
         </div>
-
-        <!-- Video -->
         <div class="video-wrapper">
             <video id="scannerVideo" autoplay playsinline muted></video>
             <canvas id="scannerCanvas"></canvas>
@@ -252,8 +192,6 @@
                 <div class="scan-line"></div>
             </div>
         </div>
-
-        <!-- Panel inferior -->
         <div class="bottom-panel">
             <div class="status-text" id="statusText">Esperando activación...</div>
             <button class="btn-close" onclick="cerrarVentana()">Cancelar</button>
@@ -266,7 +204,6 @@
         var escaneando = false;
         var barcodeDetector = null;
 
-        // Intentar usar BarcodeDetector nativo (Chrome/Edge)
         if (window.BarcodeDetector) {
             barcodeDetector = new BarcodeDetector({
                 formats: ['qr_code', 'code_128', 'ean_13', 'ean_8', 'code_39', 'upc_a', 'upc_e']
@@ -278,12 +215,10 @@
 
         function iniciarEscanner() {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                document.getElementById('errorText').textContent =
-                    '❌ Navegador no soportado. Use Chrome o Edge en Android.';
+                document.getElementById('errorText').textContent = '❌ Navegador no soportado. Use Chrome o Edge.';
                 document.getElementById('errorText').classList.add('show');
                 return;
             }
-
             document.getElementById('errorText').classList.remove('show');
             document.getElementById('statusText').textContent = '📷 Solicitando permiso de cámara...';
 
@@ -305,7 +240,7 @@
                 .catch(function(err) {
                     var mensaje = '';
                     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        mensaje = '🚫 Permiso denegado.\n\nPara permitir:\nAndroid: Ajustes → Apps → [Navegador] → Permisos → Cámara\n\no use Chrome que funciona mejor.';
+                        mensaje = '🚫 Permiso denegado. Para permitir:\nAndroid: Ajustes → Apps → Navegador → Permisos → Cámara';
                     } else if (err.name === 'NotFoundError') {
                         mensaje = '📷 No se encontró cámara.';
                     } else if (err.name === 'NotReadableError') {
@@ -324,7 +259,6 @@
             video.srcObject = stream;
             video.setAttribute('playsinline', '');
             video.setAttribute('muted', '');
-
             document.getElementById('statusText').textContent = '📷 Enfocando... apunte al código';
 
             video.onloadedmetadata = function() {
@@ -340,7 +274,6 @@
 
         function loopEscaneo() {
             if (!escaneando) return;
-
             var video = document.getElementById('scannerVideo');
             var canvas = document.getElementById('scannerCanvas');
 
@@ -348,7 +281,6 @@
                 scannerAnimFrame = requestAnimationFrame(loopEscaneo);
                 return;
             }
-
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             var ctx = canvas.getContext('2d');
@@ -378,7 +310,6 @@
             var code = jsQR(imageData.data, imageData.width, imageData.height, {
                 inversionAttempts: 'dontInvert'
             });
-
             if (code && code.data) {
                 codigoDetectado(code.data);
             } else {
@@ -389,14 +320,9 @@
         function codigoDetectado(texto) {
             escaneando = false;
             detenerCamara();
-
-            if (navigator.vibrate) {
-                navigator.vibrate([100, 50, 100]);
-            }
-
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
             document.getElementById('statusText').textContent = '✅ Detectado: ' + texto.trim();
 
-            // Enviar el código a la ventana padre (App Script)
             try {
                 if (window.opener && !window.opener.closed) {
                     window.opener.postMessage({
@@ -408,10 +334,7 @@
                 console.log('No se pudo enviar a ventana padre:', e);
             }
 
-            // Cerrar después de 1 segundo
-            setTimeout(function() {
-                window.close();
-            }, 1000);
+            setTimeout(function() { window.close(); }, 1000);
         }
 
         function detenerCamara() {
@@ -419,11 +342,8 @@
                 cancelAnimationFrame(scannerAnimFrame);
                 scannerAnimFrame = null;
             }
-
             if (scannerStream) {
-                scannerStream.getTracks().forEach(function(track) {
-                    track.stop();
-                });
+                scannerStream.getTracks().forEach(function(track) { track.stop(); });
                 scannerStream = null;
             }
         }
@@ -433,12 +353,7 @@
             window.close();
         }
 
-        // Por si el usuario cierra la ventana manualmente
-        window.addEventListener('beforeunload', function() {
-            detenerCamara();
-        });
-
-        // Si la ventana se abre desde App Script, mostrar el overlay
+        window.addEventListener('beforeunload', function() { detenerCamara(); });
         document.getElementById('permissionOverlay').style.display = 'flex';
     </script>
 </body>
