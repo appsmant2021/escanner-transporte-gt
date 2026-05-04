@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Escanear Código - Transporte GT</title>
-    <!-- Quagga2 para códigos de barras 1D (Code 128, EAN, etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.8.2/dist/quagga.min.js"></script>
-    <!-- jsQR como respaldo para QR -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -43,109 +41,82 @@
             height: 100%;
             object-fit: cover;
         }
-        #scannerCanvas { display: none; }
-        
-        /* Marco de escaneo más grande para códigos de barras */
         .scan-frame {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 280px;
-            height: 120px;
+            width: 300px;
+            height: 80px;
             pointer-events: none;
             z-index: 10;
+            border: 2px dashed #00ff88;
+            border-radius: 8px;
         }
-        .scan-frame::before,
-        .scan-frame::after {
-            content: '';
+        .scan-label {
             position: absolute;
-            width: 25px;
-            height: 25px;
-            border-color: #00ff88;
-            border-style: solid;
-        }
-        .scan-frame::before {
-            top: 0;
+            top: -30px;
             left: 0;
-            border-width: 3px 0 0 3px;
-            border-radius: 6px 0 0 0;
-        }
-        .scan-frame::after {
-            bottom: 0;
             right: 0;
-            border-width: 0 3px 3px 0;
-            border-radius: 0 0 6px 0;
-        }
-        .corner-tr {
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 25px;
-            height: 25px;
-            border-color: #00ff88;
-            border-style: solid;
-            border-width: 3px 3px 0 0;
-            border-radius: 0 6px 0 0;
-        }
-        .corner-bl {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 25px;
-            height: 25px;
-            border-color: #00ff88;
-            border-style: solid;
-            border-width: 0 0 3px 3px;
-            border-radius: 0 0 0 6px;
+            text-align: center;
+            color: #00ff88;
+            font-size: 13px;
+            font-weight: bold;
+            text-shadow: 0 0 8px rgba(0,255,136,0.5);
         }
         .scan-line {
             position: absolute;
-            left: 8px;
-            right: 8px;
+            left: 0;
+            right: 0;
             height: 2px;
-            background: linear-gradient(90deg, transparent, #00ff88, transparent);
-            box-shadow: 0 0 8px rgba(0, 255, 136, 0.8);
-            animation: moveLine 2s ease-in-out infinite;
+            background: #00ff88;
+            box-shadow: 0 0 10px rgba(0,255,136,0.8);
+            animation: moveLine 1.5s ease-in-out infinite;
             top: 50%;
         }
         @keyframes moveLine {
-            0%, 100% { top: 15%; }
-            50% { top: 85%; }
+            0%, 100% { top: 10%; }
+            50% { top: 90%; }
         }
         .bottom-panel {
             background: #1a1a2e;
-            padding: 15px 20px;
+            padding: 12px 20px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
         }
         .status-text {
             color: #ccc;
-            font-size: 14px;
+            font-size: 13px;
             text-align: center;
             min-height: 20px;
         }
-        .btn-close {
-            background: #d63031;
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+        .btn-close, .btn-manual {
+            flex: 1;
             color: white;
             border: none;
             border-radius: 20px;
-            padding: 10px 30px;
-            font-size: 14px;
+            padding: 10px 15px;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
+            text-align: center;
         }
-        .btn-close:active { transform: scale(0.96); opacity: 0.9; }
+        .btn-close { background: #d63031; }
+        .btn-manual { background: #f39c12; }
+        .btn-close:active, .btn-manual:active { transform: scale(0.96); opacity: 0.9; }
         .permission-overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.85);
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -156,7 +127,7 @@
             border-radius: 16px;
             padding: 25px;
             text-align: center;
-            max-width: 300px;
+            max-width: 320px;
             width: 90%;
         }
         .permission-box h3 { color: #0072c6; margin-bottom: 10px; font-size: 18px; }
@@ -171,17 +142,50 @@
             font-size: 15px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
         }
         .btn-allow:active { transform: scale(0.96); }
         .error-text { color: #d63031; font-size: 12px; display: none; margin-top: 10px; }
         .error-text.show { display: block; }
+        .debug-info { color: #888; font-size: 10px; text-align: center; }
         
-        .debug-info {
-            color: #888;
-            font-size: 10px;
+        /* Modal de entrada manual */
+        .modal-overlay {
+            display: none;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 30;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
             text-align: center;
-            margin-top: 5px;
+            max-width: 300px;
+            width: 90%;
+        }
+        .modal-box h4 { color: #f39c12; margin-bottom: 10px; }
+        .modal-box input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #0072c6;
+            border-radius: 8px;
+            font-size: 18px;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        .modal-box .btn-enviar {
+            background: #0072c6;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 10px 25px;
+            font-weight: 600;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -190,64 +194,59 @@
         <div class="permission-overlay" id="permissionOverlay">
             <div class="permission-box">
                 <h3>📷 Activar Cámara</h3>
-                <p>Presiona el botón para iniciar el escáner.<br><small>Apunta al código de barras horizontalmente.</small></p>
-                <button class="btn-allow" id="btnAllow" onclick="iniciarEscanner()">Iniciar Escáner</button>
+                <p>Presiona para escanear.<br><small>Coloca el código DENTRO del rectángulo verde.</small></p>
+                <button class="btn-allow" onclick="iniciarEscanner()">Iniciar Escáner</button>
                 <small id="errorText" class="error-text"></small>
             </div>
         </div>
+        
+        <!-- Modal de entrada manual -->
+        <div class="modal-overlay" id="manualModal">
+            <div class="modal-box">
+                <h4>✏️ Ingresar Código Manualmente</h4>
+                <input type="text" id="manualCode" placeholder="Ej: 464" inputmode="numeric">
+                <button class="btn-enviar" onclick="enviarCodigoManual()">Enviar Código</button>
+                <button class="btn-close" style="width:100%;margin-top:8px;" onclick="document.getElementById('manualModal').classList.remove('show')">Cancelar</button>
+            </div>
+        </div>
+
         <div class="video-wrapper">
             <video id="scannerVideo" autoplay playsinline muted></video>
-            <canvas id="scannerCanvas"></canvas>
             <div class="scan-frame">
-                <div class="corner-tr"></div>
-                <div class="corner-bl"></div>
+                <div class="scan-label">Coloque el código aquí</div>
                 <div class="scan-line"></div>
             </div>
         </div>
         <div class="bottom-panel">
             <div class="status-text" id="statusText">Esperando activación...</div>
-            <button class="btn-close" onclick="cerrarVentana()">Cancelar</button>
+            <div class="btn-row">
+                <button class="btn-manual" onclick="mostrarEntradaManual()">⌨️ Manual</button>
+                <button class="btn-close" onclick="cerrarVentana()">Cancelar</button>
+            </div>
             <div class="debug-info" id="debugInfo"></div>
         </div>
     </div>
 
     <script>
         var scannerStream = null;
-        var scannerAnimFrame = null;
         var escaneando = false;
-        var barcodeDetector = null;
-        var usandoQuagga = false;
         var ultimoCodigo = '';
         var tiempoUltimoCodigo = 0;
 
-        // Intentar BarcodeDetector nativo (mejor para 1D en Chrome/Edge)
-        if (window.BarcodeDetector) {
-            barcodeDetector = new BarcodeDetector({
-                formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code']
-            }).then(function(detector) {
-                console.log('✅ BarcodeDetector listo');
-                document.getElementById('debugInfo').textContent = 'Motor: BarcodeDetector nativo';
-            }).catch(function(e) {
-                console.warn('BarcodeDetector falló:', e);
-                barcodeDetector = null;
-            });
-        }
-
         function iniciarEscanner() {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                document.getElementById('errorText').textContent = '❌ Navegador no soportado. Use Chrome o Edge.';
+                document.getElementById('errorText').textContent = '❌ Use Chrome o Edge en Android.';
                 document.getElementById('errorText').classList.add('show');
                 return;
             }
             document.getElementById('errorText').classList.remove('show');
-            document.getElementById('statusText').textContent = '📷 Solicitando permiso de cámara...';
+            document.getElementById('statusText').textContent = '📷 Solicitando cámara...';
 
             var constraints = {
                 video: {
                     facingMode: { ideal: 'environment' },
                     width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                    focusMode: 'continuous'
+                    height: { ideal: 1080 }
                 },
                 audio: false
             };
@@ -256,16 +255,12 @@
                 .then(function(stream) {
                     scannerStream = stream;
                     document.getElementById('permissionOverlay').style.display = 'none';
-                    arrancarVideo(stream);
+                    iniciarQuagga();
                 })
                 .catch(function(err) {
                     var mensaje = '';
-                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        mensaje = '🚫 Permiso denegado. Android: Ajustes → Apps → Navegador → Permisos → Cámara';
-                    } else if (err.name === 'NotFoundError') {
-                        mensaje = '📷 No se encontró cámara.';
-                    } else if (err.name === 'NotReadableError') {
-                        mensaje = '⚠️ Cámara en uso por otra app.';
+                    if (err.name === 'NotAllowedError') {
+                        mensaje = '🚫 Permiso denegado. Vaya a Ajustes del navegador → Permisos → Cámara → Permitir.';
                     } else {
                         mensaje = '❌ Error: ' + (err.message || 'desconocido');
                     }
@@ -275,36 +270,10 @@
                 });
         }
 
-        function arrancarVideo(stream) {
-            var video = document.getElementById('scannerVideo');
-            video.srcObject = stream;
-            video.setAttribute('playsinline', '');
-            video.setAttribute('muted', '');
-            document.getElementById('statusText').textContent = '📷 Enfocando... acerque el código';
-
-            video.onloadedmetadata = function() {
-                video.play().then(function() {
-                    escaneando = true;
-                    
-                    // Intentar Quagga2 primero (especialista en Code 128)
-                    if (!barcodeDetector && typeof Quagga !== 'undefined') {
-                        iniciarQuagga();
-                    } else {
-                        // Usar loop manual con BarcodeDetector o jsQR
-                        loopEscaneo();
-                    }
-                }).catch(function(e) {
-                    document.getElementById('statusText').textContent = 'Error al iniciar video';
-                    console.error(e);
-                });
-            };
-        }
-
-        // ==================== QUAGGA2 (especialista en Code 128) ====================
         function iniciarQuagga() {
-            usandoQuagga = true;
-            document.getElementById('debugInfo').textContent = 'Motor: Quagga2 (Code 128)';
-            
+            document.getElementById('debugInfo').textContent = 'Motor: Quagga2 (búsqueda intensiva)';
+            document.getElementById('statusText').textContent = '📷 Buscando código... acerque la cámara';
+
             Quagga.init({
                 inputStream: {
                     name: "Live",
@@ -317,10 +286,10 @@
                     }
                 },
                 locator: {
-                    patchSize: "medium",
-                    halfSample: true
+                    patchSize: "small",
+                    halfSample: false
                 },
-                numOfWorkers: 2,
+                numOfWorkers: 4,
                 frequency: 10,
                 decoder: {
                     readers: [
@@ -329,135 +298,121 @@
                         "ean_reader",
                         "ean_8_reader",
                         "upc_reader",
-                        "upc_e_reader"
-                    ]
+                        "upc_e_reader",
+                        "code_93_reader",
+                        "codabar_reader"
+                    ],
+                    multiple: false
                 },
                 locate: true
             }, function(err) {
                 if (err) {
-                    console.error('Quagga init error:', err);
-                    document.getElementById('debugInfo').textContent = 'Quagga falló, usando jsQR';
-                    usandoQuagga = false;
-                    loopEscaneo();
+                    console.error('Quagga error:', err);
+                    document.getElementById('debugInfo').textContent = 'Error Quagga: ' + err.message;
+                    document.getElementById('statusText').textContent = '❌ Error al iniciar escáner';
                     return;
                 }
                 Quagga.start();
-                document.getElementById('statusText').textContent = '📷 Escaneando código de barras...';
+                escaneando = true;
             });
 
+            var detecciones = 0;
+            
             Quagga.onDetected(function(result) {
+                if (!escaneando) return;
+                
                 if (result && result.codeResult && result.codeResult.code) {
-                    var codigo = result.codeResult.code;
-                    console.log('✅ Quagga detectó:', codigo, 'Formato:', result.codeResult.format);
+                    var codigo = result.codeResult.code.trim();
+                    var confianza = result.codeResult.confidence || 0;
                     
-                    // Evitar lecturas duplicadas en menos de 2 segundos
-                    var ahora = Date.now();
-                    if (codigo === ultimoCodigo && (ahora - tiempoUltimoCodigo) < 2000) {
-                        return;
+                    console.log('Detección #' + (++detecciones) + ': ' + codigo + ' (confianza: ' + confianza + ')');
+                    document.getElementById('debugInfo').textContent = 
+                        'Detecciones: ' + detecciones + ' | Último: ' + codigo + ' (' + Math.round(confianza * 100) + '%)';
+                    
+                    // Aceptar con confianza > 0.5 para ser más permisivos
+                    if (confianza > 0.5 && /^[a-zA-Z0-9\-\.\/\s]+$/.test(codigo)) {
+                        var ahora = Date.now();
+                        if (codigo === ultimoCodigo && (ahora - tiempoUltimoCodigo) < 2500) {
+                            return;
+                        }
+                        ultimoCodigo = codigo;
+                        tiempoUltimoCodigo = ahora;
+                        
+                        codigoDetectado(codigo);
                     }
-                    ultimoCodigo = codigo;
-                    tiempoUltimoCodigo = ahora;
-                    
-                    codigoDetectado(codigo);
                 }
             });
-        }
 
-        // ==================== LOOP MANUAL (BarcodeDetector o jsQR) ====================
-        function loopEscaneo() {
-            if (!escaneando || usandoQuagga) return;
-            var video = document.getElementById('scannerVideo');
-            var canvas = document.getElementById('scannerCanvas');
-
-            if (video.readyState < video.HAVE_ENOUGH_DATA || video.videoWidth === 0) {
-                scannerAnimFrame = requestAnimationFrame(loopEscaneo);
-                return;
-            }
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            var ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // Opción 1: BarcodeDetector nativo
-            if (barcodeDetector) {
-                barcodeDetector.then(function(detector) {
-                    if (!escaneando) return;
-                    detector.detect(canvas).then(function(barcodes) {
-                        if (barcodes && barcodes.length > 0) {
-                            var codigo = barcodes[0].rawValue;
-                            console.log('✅ BarcodeDetector encontró:', codigo);
-                            codigoDetectado(codigo);
-                        } else {
-                            // También intentar con jsQR para QR
-                            escanearConJsQR(ctx, canvas);
-                        }
-                    }).catch(function() {
-                        escanearConJsQR(ctx, canvas);
-                    });
-                });
-            } else {
-                escanearConJsQR(ctx, canvas);
-            }
-        }
-
-        function escanearConJsQR(ctx, canvas) {
-            if (!escaneando) return;
-            var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            var code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: 'dontInvert'
+            Quagga.onProcessed(function(result) {
+                if (result && result.boxes && result.boxes.length > 0) {
+                    document.getElementById('statusText').textContent = '📷 Detectando patrón...';
+                }
             });
-            if (code && code.data) {
-                console.log('✅ jsQR encontró:', code.data);
-                codigoDetectado(code.data);
-            } else {
-                scannerAnimFrame = requestAnimationFrame(loopEscaneo);
-            }
         }
 
         function codigoDetectado(texto) {
             escaneando = false;
-            detenerCamara();
-            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-            document.getElementById('statusText').textContent = '✅ Detectado: ' + texto.trim();
+            detenerTodo();
+            
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]);
+            document.getElementById('statusText').textContent = '✅ Detectado: ' + texto;
 
             try {
                 if (window.opener && !window.opener.closed) {
                     window.opener.postMessage({
                         tipo: 'codigoEscaneado',
-                        codigo: texto.trim()
+                        codigo: texto
                     }, '*');
                 }
             } catch (e) {
-                console.log('No se pudo enviar a ventana padre:', e);
+                console.log('Error enviando:', e);
             }
 
-            setTimeout(function() { window.close(); }, 1000);
+            setTimeout(function() { window.close(); }, 1200);
         }
 
-        function detenerCamara() {
-            if (usandoQuagga && typeof Quagga !== 'undefined') {
+        function mostrarEntradaManual() {
+            document.getElementById('manualModal').classList.add('show');
+            document.getElementById('manualCode').focus();
+        }
+
+        function enviarCodigoManual() {
+            var codigo = document.getElementById('manualCode').value.trim();
+            if (!codigo) return;
+            document.getElementById('manualModal').classList.remove('show');
+            codigoDetectado(codigo);
+        }
+
+        function detenerTodo() {
+            if (typeof Quagga !== 'undefined') {
                 try { Quagga.stop(); } catch(e) {}
             }
-            usandoQuagga = false;
-            
-            if (scannerAnimFrame) {
-                cancelAnimationFrame(scannerAnimFrame);
-                scannerAnimFrame = null;
-            }
             if (scannerStream) {
-                scannerStream.getTracks().forEach(function(track) { track.stop(); });
+                scannerStream.getTracks().forEach(function(t) { t.stop(); });
                 scannerStream = null;
             }
         }
 
         function cerrarVentana() {
-            detenerCamara();
+            detenerTodo();
             window.close();
         }
 
-        window.addEventListener('beforeunload', function() { detenerCamara(); });
-        
-        // Mostrar overlay al cargar
+        window.addEventListener('beforeunload', function() { detenerTodo(); });
+
+        // Permitir tecla Enter en entrada manual
+        document.addEventListener('DOMContentLoaded', function() {
+            var inputManual = document.getElementById('manualCode');
+            if (inputManual) {
+                inputManual.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        enviarCodigoManual();
+                    }
+                });
+            }
+        });
+
         document.getElementById('permissionOverlay').style.display = 'flex';
     </script>
 </body>
