@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Escanear Código - Transporte GT</title>
+    <!-- Quagga2 para códigos de barras lineales (Code 128, EAN, etc.) -->
+    <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.8.2/dist/quagga.min.js"></script>
+    <!-- jsQR como respaldo para QR codes -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -14,6 +17,7 @@
             height: 100dvh;
             display: flex;
             flex-direction: column;
+            -webkit-tap-highlight-color: transparent;
         }
         .video-wrapper {
             flex: 1;
@@ -31,22 +35,37 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 280px;
-            height: 100px;
+            width: 300px;
+            height: 80px;
             border: 2px solid #00ff88;
             border-radius: 8px;
             pointer-events: none;
             z-index: 10;
+            box-shadow: 0 0 20px rgba(0,255,136,0.3);
         }
         .scan-label {
             position: absolute;
-            top: -25px;
+            top: -28px;
             left: 0;
             right: 0;
             text-align: center;
             color: #00ff88;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: bold;
+            text-shadow: 0 0 8px rgba(0,255,136,0.5);
+        }
+        .scan-line {
+            position: absolute;
+            left: 5px;
+            right: 5px;
+            height: 2px;
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+            animation: scanMove 1.5s ease-in-out infinite;
+        }
+        @keyframes scanMove {
+            0%, 100% { top: 10%; }
+            50% { top: 90%; }
         }
         .bottom-panel {
             background: #1a1a2e;
@@ -59,6 +78,7 @@
             color: #ccc;
             font-size: 13px;
             text-align: center;
+            min-height: 20px;
         }
         .btn-row {
             display: flex;
@@ -109,7 +129,7 @@
         }
         .error-text { color: #d63031; font-size: 12px; display: none; margin-top: 10px; }
         .error-text.show { display: block; }
-        .debug-info { color: #666; font-size: 10px; text-align: center; margin-top: 4px; }
+        .debug-info { color: #888; font-size: 10px; text-align: center; margin-top: 4px; }
         .modal-overlay {
             display: none;
             position: absolute;
@@ -155,7 +175,7 @@
     <div class="overlay" id="permissionOverlay">
         <div class="overlay-box">
             <h3>📷 Activar Cámara</h3>
-            <p>Presiona el botón para escanear.<br>Coloca el código DENTRO del rectángulo verde.</p>
+            <p>Presiona para escanear.<br><small>Coloca el código DENTRO del rectángulo verde. Mantenlo firme 2 segundos.</small></p>
             <button class="btn-allow" onclick="iniciarEscanner()">Iniciar Escáner</button>
             <small id="errorText" class="error-text"></small>
         </div>
@@ -170,10 +190,11 @@
         </div>
     </div>
 
-    <div class="video-wrapper">
+    <div class="video-wrapper" id="videoWrapper">
         <video id="scannerVideo" autoplay playsinline muted></video>
         <div class="scan-frame">
-            <div class="scan-label">📷 Código aquí</div>
+            <div class="scan-label">📷 Coloque el código aquí</div>
+            <div class="scan-line"></div>
         </div>
     </div>
     <div class="bottom-panel">
@@ -188,9 +209,14 @@
     <script>
         var scannerStream = null;
         var escaneando = false;
-        var framesProcesados = 0;
-        var barcodeDetector = null;
+        var usandoQuagga = false;
         var usandoBarcodeDetector = false;
+        var barcodeDetector = null;
+        
+        // Sistema de validación: requiere 2 lecturas iguales en menos de 3 segundos
+        var lecturas = [];
+        var ultimoCodigoEnviado = '';
+        var tiempoUltimoEnvio = 0;
 
         function iniciarEscanner() {
             var errorText = document.getElementById('errorText');
@@ -204,7 +230,7 @@
                 return;
             }
 
-            // Intentar crear BarcodeDetector (manejo seguro)
+            // Prioridad 1: BarcodeDetector nativo (Chrome/Edge moderno)
             if (window.BarcodeDetector) {
                 try {
                     barcodeDetector = new BarcodeDetector({
@@ -213,20 +239,24 @@
                     usandoBarcodeDetector = true;
                     document.getElementById('debugInfo').textContent = 'Motor: BarcodeDetector nativo ✅';
                 } catch(e) {
-                    console.warn('BarcodeDetector no disponible:', e);
                     barcodeDetector = null;
                     usandoBarcodeDetector = false;
-                    document.getElementById('debugInfo').textContent = 'Motor: jsQR (respaldo)';
                 }
-            } else {
-                document.getElementById('debugInfo').textContent = 'Motor: jsQR (respaldo)';
+            }
+
+            // Prioridad 2: Quagga2 para códigos lineales
+            if (!usandoBarcodeDetector && typeof Quagga !== 'undefined') {
+                usandoQuagga = true;
+                document.getElementById('debugInfo').textContent = 'Motor: Quagga2 (Code 128, EAN)';
+            } else if (!usandoBarcodeDetector) {
+                document.getElementById('debugInfo').textContent = 'Motor: jsQR (respaldo básico)';
             }
 
             var constraints = {
                 video: {
                     facingMode: { ideal: 'environment' },
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
                 },
                 audio: false
             };
@@ -242,10 +272,17 @@
                     video.onloadedmetadata = function() {
                         video.play().then(function() {
                             document.getElementById('permissionOverlay').style.display = 'none';
-                            document.getElementById('statusText').textContent = '📷 Escaneando... mantenga el código firme';
+                            document.getElementById('statusText').textContent = '📷 Escaneando... mantenga firme el código';
                             escaneando = true;
-                            framesProcesados = 0;
-                            loopEscaneo();
+                            lecturas = [];
+
+                            if (usandoBarcodeDetector) {
+                                loopBarcodeDetector();
+                            } else if (usandoQuagga) {
+                                iniciarQuagga();
+                            } else {
+                                loopJsQR();
+                            }
                         }).catch(function(err) {
                             errorText.textContent = 'Error al reproducir: ' + err.message;
                             errorText.classList.add('show');
@@ -257,6 +294,8 @@
                     var mensaje = '';
                     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
                         mensaje = '🚫 Permiso denegado.\nAndroid: Ajustes → Apps → Navegador → Permisos → Cámara → Permitir';
+                    } else if (err.name === 'NotFoundError') {
+                        mensaje = '📷 No se encontró cámara.';
                     } else {
                         mensaje = '❌ Error: ' + (err.message || err.name);
                     }
@@ -266,64 +305,154 @@
                 });
         }
 
-        function loopEscaneo() {
+        // ==================== MÉTODO 1: BarcodeDetector nativo ====================
+        function loopBarcodeDetector() {
+            if (!escaneando || !barcodeDetector) return;
+
+            var video = document.getElementById('scannerVideo');
+            if (video.readyState < 2 || video.videoWidth === 0) {
+                requestAnimationFrame(loopBarcodeDetector);
+                return;
+            }
+
+            barcodeDetector.detect(video)
+                .then(function(barcodes) {
+                    if (barcodes && barcodes.length > 0) {
+                        var codigo = barcodes[0].rawValue.trim();
+                        validarYEnviar(codigo);
+                    }
+                    if (escaneando) requestAnimationFrame(loopBarcodeDetector);
+                })
+                .catch(function() {
+                    if (escaneando) requestAnimationFrame(loopBarcodeDetector);
+                });
+        }
+
+        // ==================== MÉTODO 2: Quagga2 (códigos lineales) ====================
+        function iniciarQuagga() {
+            Quagga.init({
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: document.getElementById('videoWrapper'),
+                    constraints: {
+                        facingMode: "environment",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                },
+                locator: {
+                    patchSize: "medium",
+                    halfSample: true
+                },
+                numOfWorkers: 2,
+                frequency: 10,
+                decoder: {
+                    readers: [
+                        "code_128_reader",
+                        "code_39_reader",
+                        "ean_reader",
+                        "ean_8_reader",
+                        "upc_reader",
+                        "upc_e_reader"
+                    ]
+                },
+                locate: true
+            }, function(err) {
+                if (err) {
+                    console.error('Quagga error:', err);
+                    document.getElementById('debugInfo').textContent = 'Quagga falló, usando jsQR';
+                    usandoQuagga = false;
+                    loopJsQR();
+                    return;
+                }
+                Quagga.start();
+            });
+
+            Quagga.onDetected(function(result) {
+                if (!escaneando) return;
+                if (result && result.codeResult && result.codeResult.code) {
+                    var codigo = result.codeResult.code.trim();
+                    validarYEnviar(codigo);
+                }
+            });
+        }
+
+        // ==================== MÉTODO 3: jsQR (respaldo) ====================
+        function loopJsQR() {
             if (!escaneando) return;
 
             var video = document.getElementById('scannerVideo');
             if (video.readyState < 2 || video.videoWidth === 0) {
-                requestAnimationFrame(loopEscaneo);
+                requestAnimationFrame(loopJsQR);
                 return;
             }
 
-            framesProcesados++;
-
-            if (framesProcesados % 30 === 0) {
-                document.getElementById('statusText').textContent = '📷 Escaneando... frame ' + framesProcesados;
-            }
-
-            if (usandoBarcodeDetector && barcodeDetector) {
-                // BarcodeDetector YA es una instancia, no una promesa
-                barcodeDetector.detect(video)
-                    .then(function(barcodes) {
-                        if (barcodes && barcodes.length > 0) {
-                            codigoDetectado(barcodes[0].rawValue.trim());
-                            return;
-                        }
-                        requestAnimationFrame(loopEscaneo);
-                    })
-                    .catch(function(err) {
-                        console.log('Error detect:', err);
-                        requestAnimationFrame(loopEscaneo);
-                    });
-            } else {
-                // jsQR cada 5 frames
-                if (framesProcesados % 5 === 0 && typeof jsQR !== 'undefined') {
-                    try {
-                        var canvas = document.createElement('canvas');
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        var ctx = canvas.getContext('2d');
-                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                        var code = jsQR(imageData.data, imageData.width, imageData.height, {
-                            inversionAttempts: 'dontInvert'
-                        });
-                        if (code && code.data) {
-                            codigoDetectado(code.data.trim());
-                            return;
-                        }
-                    } catch(e) {}
+            try {
+                var canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                
+                var code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: 'dontInvert'
+                });
+                
+                if (code && code.data) {
+                    validarYEnviar(code.data.trim());
+                    return;
                 }
-                requestAnimationFrame(loopEscaneo);
+            } catch(e) {}
+            
+            requestAnimationFrame(loopJsQR);
+        }
+
+        // ==================== SISTEMA DE VALIDACIÓN ====================
+        function validarYEnviar(codigo) {
+            if (!codigo || codigo.length === 0) return;
+            
+            var ahora = Date.now();
+            
+            // Evitar enviar el mismo código 2 veces en menos de 3 segundos
+            if (codigo === ultimoCodigoEnviado && (ahora - tiempoUltimoEnvio) < 3000) {
+                return;
+            }
+            
+            // Agregar lectura a la lista
+            lecturas.push({ codigo: codigo, tiempo: ahora });
+            
+            // Limpiar lecturas viejas (más de 2 segundos)
+            lecturas = lecturas.filter(function(l) { return (ahora - l.tiempo) < 2000; });
+            
+            // Contar cuántas veces aparece este código en las lecturas recientes
+            var coincidencias = lecturas.filter(function(l) { return l.codigo === codigo; }).length;
+            
+            // Necesitamos al menos 2 lecturas iguales para aceptar
+            if (coincidencias >= 2) {
+                ultimoCodigoEnviado = codigo;
+                tiempoUltimoEnvio = ahora;
+                codigoDetectado(codigo);
+            } else {
+                // Mostrar que se detectó algo pero esperando confirmación
+                document.getElementById('statusText').textContent = '📷 Detectando: ' + codigo + ' (confirmando...)';
             }
         }
 
         function codigoDetectado(texto) {
             escaneando = false;
+            
+            // Detener Quagga si está activo
+            if (usandoQuagga && typeof Quagga !== 'undefined') {
+                try { Quagga.stop(); } catch(e) {}
+            }
+            
             if (scannerStream) {
                 scannerStream.getTracks().forEach(function(t) { t.stop(); });
                 scannerStream = null;
             }
+            
             if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 
             document.getElementById('statusText').textContent = '✅ Detectado: ' + texto;
@@ -337,7 +466,7 @@
                 }
             } catch(e) {}
 
-            setTimeout(function() { window.close(); }, 1500);
+            setTimeout(function() { window.close(); }, 1200);
         }
 
         function mostrarEntradaManual() {
@@ -354,6 +483,9 @@
 
         function cerrarVentana() {
             escaneando = false;
+            if (usandoQuagga && typeof Quagga !== 'undefined') {
+                try { Quagga.stop(); } catch(e) {}
+            }
             if (scannerStream) {
                 scannerStream.getTracks().forEach(function(t) { t.stop(); });
                 scannerStream = null;
@@ -362,6 +494,9 @@
         }
 
         window.addEventListener('beforeunload', function() {
+            if (usandoQuagga && typeof Quagga !== 'undefined') {
+                try { Quagga.stop(); } catch(e) {}
+            }
             if (scannerStream) {
                 scannerStream.getTracks().forEach(function(t) { t.stop(); });
             }
